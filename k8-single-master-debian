@@ -3,17 +3,21 @@
 # MASTER_IP=192.168.200.200
 # POD_CIDR=192.168.220.0/24
 
-while : ; do
-  read -p 'Control Plane IP (192.168.200.200): ' MASTER_IP
-  [[ $MASTER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || break
-done
+# while : ; do
+#   read -p 'Control Plane IP (192.168.200.200): ' MASTER_IP
+#   [[ $MASTER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || break
+# done
 
 while : ; do
   read -p 'Pod CIDR (192.168.220.0/24): ' POD_CIDR
-  [[ $POD_CIDR =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] || break
+  if [ -z "$POD_CIDR" ]; then
+    $POD_CIDR=192.168.220.0/24
+    break
+  fi
+  [[ $POD_CIDR =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] && break
 done
 
-echo "Control Plane IP is set to $MASTER_IP"
+# echo "Control Plane IP is set to $MASTER_IP"
 echo "Pod CIDR is set to $POD_CIDR"
 
 
@@ -65,9 +69,10 @@ sudo systemctl restart docker
 
 sudo systemctl enable docker
 
-sudo groupadd docker
-sudo usermod -aG docker $USER
-newgrp docker
+# commented out because it raised docker group already exists
+# sudo groupadd docker
+# sudo usermod -aG docker $USER
+# newgrp docker
 }
 #########################################################
 
@@ -94,7 +99,7 @@ sudo apt-mark hold kubelet kubeadm kubectl
 
 ################ SETUP CONTROL PLANE ####################
 master(){
-echo "$MASTER_IP cluster-endpoint" | tee -a /etc/hosts
+echo "127.0.0.1 cluster-endpoint" | sudo tee -a /etc/hosts
 sudo kubeadm init --control-plane-endpoint=cluster-endpoint --upload-certs --pod-network-cidr=$POD_CIDR
 
 # To start using your cluster, you need to run the following as a regular user
@@ -109,6 +114,6 @@ kubectl apply -f calico.yaml
 
 
 ######################## MAIN ###########################
-docker()
-kubeadm()
-master()
+docker
+kubeadm
+master
