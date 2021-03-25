@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# MASTER_IP=192.168.200.200
+# POD_CIDR=192.168.220.0/24
+
+while : ; do
+  read -p 'Control Plane IP (192.168.200.200): ' MASTER_IP
+  [[ $MASTER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || break
+done
+
+while : ; do
+  read -p 'Pod CIDR (192.168.220.0/24): ' POD_CIDR
+  [[ $POD_CIDR =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] || break
+done
+
+echo "Control Plane IP is set to $MASTER_IP"
+echo "Pod CIDR is set to $POD_CIDR"
+
+
+##################   INSTALLING DOCKER ##################
+docker(){
+# Update the apt package index and install packages to allow apt to use a repository over HTTPS
+sudo apt-get update
+sudo apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg-agent \
+    software-properties-common
+
+# Add Docker’s official GPG key
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
+
+# Verify that you now have the key with the fingerprint 9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88, by searching for the last 8 characters of the fingerprint.
+sudo apt-key fingerprint 0EBFCD88
+
+# Use the following command to set up the stable repository.
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/debian \
+   $(lsb_release -cs) \
+   stable"
+
+# Update the apt package index, and install the latest version of Docker Engine and containerd
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+# Set up the Docker daemon
+cat <<EOF | sudo tee /etc/docker/daemon.json
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+# Create /etc/systemd/system/docker.service.d
+sudo mkdir -p /etc/systemd/system/docker.service.d
+
+# Restart Docker
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+sudo systemctl enable docker
+
+sudo groupadd docker
+sudo usermod -aG docker $USER
+newgrp docker
+}
+#########################################################
+
+################# INSTALL KUBEADM #######################
+kubeadm(){
+#  iptables to correctly see bridged traffic
+sudo cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+sudo sysctl --system
+
+# Installing kubeadm, kubelet and kubectl
+sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+}
+#########################################################
+
+################ SETUP CONTROL PLANE ####################
+master(){
+echo "$MASTER_IP cluster-endpoint" | tee -a /etc/hosts
+sudo kubeadm init --control-plane-endpoint=cluster-endpoint --upload-certs --pod-network-cidr=$POD_CIDR
+
+# To start using your cluster, you need to run the following as a regular user
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Install Calico with Kubernetes API datastore, 50 nodes or less
+curl https://docs.projectcalico.org/manifests/calico.yaml -O
+kubectl apply -f calico.yaml
+}
+
+
+######################## MAIN ###########################
+docker()
+kubeadm()
+master()
