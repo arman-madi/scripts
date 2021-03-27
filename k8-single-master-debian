@@ -11,7 +11,7 @@
 while : ; do
   read -p 'Pod CIDR (192.168.220.0/24): ' POD_CIDR
   if [ -z "$POD_CIDR" ]; then
-    $POD_CIDR=192.168.220.0/24
+    POD_CIDR=192.168.220.0/24
     break
   fi
   [[ $POD_CIDR =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] && break
